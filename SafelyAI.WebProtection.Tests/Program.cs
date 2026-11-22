@@ -1,6 +1,7 @@
 ﻿
 using SafelyAI.WebProtection.PhishingDetection;
 using SafelyAI.WebProtection.DomainReputation;
+using SafelyAI.WebProtection.Certificates;
 var detector = new PhishingDetector();
 
 string[] urls =
@@ -41,6 +42,38 @@ foreach (string url in reputationUrls)
     var result = reputationChecker.Analyze(url);
 
     Console.WriteLine($"\nURL : {result.Url}");
+    Console.WriteLine($"Score : {result.RiskScore}/100");
+    Console.WriteLine($"Niveau : {result.RiskLevel}");
+
+    foreach (string finding in result.Findings)
+    {
+        Console.WriteLine("- " + finding);
+    }
+}
+Console.WriteLine("\n=== TEST CERTIFICATS HTTPS ===");
+
+var certificateAnalyzer = new CertificateAnalyzer();
+
+string[] certificateUrls =
+{
+    "https://www.google.com",
+    "https://expired.badssl.com"
+};
+
+foreach (string url in certificateUrls)
+{
+    var result = await certificateAnalyzer.AnalyzeAsync(url);
+
+    Console.WriteLine($"\nURL : {result.Url}");
+    Console.WriteLine($"Connexion réussie : {result.ConnectionSuccessful}");
+
+    if (result.ConnectionSuccessful)
+    {
+        Console.WriteLine($"Sujet : {result.Subject}");
+        Console.WriteLine($"Émetteur : {result.Issuer}");
+        Console.WriteLine($"Expiration : {result.ExpirationDate}");
+    }
+
     Console.WriteLine($"Score : {result.RiskScore}/100");
     Console.WriteLine($"Niveau : {result.RiskLevel}");
 
