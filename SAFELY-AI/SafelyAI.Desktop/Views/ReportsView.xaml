@@ -1,0 +1,6 @@
+<UserControl x:Class="SafelyAI.Desktop.Views.ReportsView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel Margin="32">
+    <TextBlock Text="Rapports et statistiques" Style="{StaticResource H1}"/>
+    <TextBlock Text="Historique des analyses, menaces bloquées et évolution dans le temps." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}"/>
+  </StackPanel>
+</UserControl>

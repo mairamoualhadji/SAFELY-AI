@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="SafelyAI.Desktop/SafelyAI.Desktop.csproj" />
+  <Project Path="SafelyAI.Common/SafelyAI.Common.csproj" />
+  <Project Path="SafelyAI.AI/SafelyAI.AI.csproj" />
+  <Project Path="SafelyAI.Network/SafelyAI.Network.csproj" />
+  <Project Path="SafelyAI.Identity/SafelyAI.Identity.csproj" />
+  <Project Path="SafelyAI.SystemMonitor/SafelyAI.SystemMonitor.csproj" />
+</Solution>

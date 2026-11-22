@@ -1,0 +1,19 @@
+<UserControl x:Class="SafelyAI.Desktop.Views.DashboardView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel Margin="32">
+    <Border Style="{StaticResource Card}">
+      <StackPanel>
+        <TextBlock Text="{Binding Status}" Style="{StaticResource H1}"/>
+        <TextBlock Text="{Binding LastScan}" Margin="0,6,0,16" Foreground="{DynamicResource MutedBrush}"/>
+        <TextBlock Text="Niveau de protection" Foreground="{DynamicResource MutedBrush}"/>
+        <ProgressBar Value="{Binding ProtectionLevel}" Maximum="100" Height="8" Margin="0,6,0,0"
+                     Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource BorderBrush2}" BorderThickness="0"/>
+        <TextBlock Text="{Binding ProtectionLevel, StringFormat={}{0} %}" Margin="0,6,0,0" Foreground="{DynamicResource TextBrush}"/>
+      </StackPanel>
+    </Border>
+    <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+      <Button Content="Analyse rapide" Command="{Binding QuickScanCommand}"/>
+      <Button Content="Analyse complète" Command="{Binding FullScanCommand}"/>
+      <Button Content="Analyse personnalisée" Command="{Binding CustomScanCommand}"/>
+    </StackPanel>
+  </StackPanel>
+</UserControl>
