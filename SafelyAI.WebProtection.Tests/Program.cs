@@ -2,6 +2,7 @@
 using SafelyAI.WebProtection.PhishingDetection;
 using SafelyAI.WebProtection.DomainReputation;
 using SafelyAI.WebProtection.Certificates;
+using SafelyAI.WebProtection.DownloadAnalysis;
 var detector = new PhishingDetector();
 
 string[] urls =
@@ -74,6 +75,45 @@ foreach (string url in certificateUrls)
         Console.WriteLine($"Expiration : {result.ExpirationDate}");
     }
 
+    Console.WriteLine($"Score : {result.RiskScore}/100");
+    Console.WriteLine($"Niveau : {result.RiskLevel}");
+
+    foreach (string finding in result.Findings)
+    {
+        Console.WriteLine("- " + finding);
+    }
+}
+Console.WriteLine("\n=== TEST DOWNLOAD ANALYZER ===");
+
+var downloadAnalyzer = new DownloadAnalyzer();
+
+string testFolder = Path.Combine(
+    Path.GetTempPath(),
+    "SafelyAI-DownloadTests"
+);
+
+Directory.CreateDirectory(testFolder);
+
+// Création de trois fichiers de test inoffensifs
+string[] testFiles =
+{
+    Path.Combine(testFolder, "document.txt"),
+    Path.Combine(testFolder, "setup.exe"),
+    Path.Combine(testFolder, "facture.pdf.exe")
+};
+
+File.WriteAllText(testFiles[0], "Document de test");
+File.WriteAllText(testFiles[1], "Fichier de test inoffensif");
+File.WriteAllText(testFiles[2], "Fichier de test inoffensif");
+
+foreach (string file in testFiles)
+{
+    var result = downloadAnalyzer.Analyze(file);
+
+    Console.WriteLine($"\nFichier : {result.FileName}");
+    Console.WriteLine($"Extension : {result.Extension}");
+    Console.WriteLine($"Taille : {result.FileSize} octets");
+    Console.WriteLine($"SHA-256 : {result.SHA256}");
     Console.WriteLine($"Score : {result.RiskScore}/100");
     Console.WriteLine($"Niveau : {result.RiskLevel}");
 
