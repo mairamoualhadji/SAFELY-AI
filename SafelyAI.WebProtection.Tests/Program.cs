@@ -1,26 +1,26 @@
 ﻿
-using SafelyAI.WebProtection.UrlAnalysis;
+using SafelyAI.WebProtection.PhishingDetection;
 
-var analyzer = new UrlAnalyzer();
+var detector = new PhishingDetector();
 
 string[] urls =
 {
     "https://www.google.com",
-    "http://example.com/login",
-    "https://example.com/account/verify"
+    "https://google-login.example.com",
+    "https://paypal-security.example.com",
+    "http://192.168.1.10/login"
 };
 
 foreach (string url in urls)
 {
-    var result = analyzer.Analyze(url);
+    var result = detector.Analyze(url);
 
     Console.WriteLine("\nURL : " + result.Url);
-    Console.WriteLine("Valide : " + result.IsValid);
     Console.WriteLine("Score : " + result.RiskScore + "/100");
-    Console.WriteLine("Risque : " + result.RiskLevel);
+    Console.WriteLine("Niveau : " + result.RiskLevel);
 
-    foreach (string risk in result.Risks)
+    foreach (string finding in result.Findings)
     {
-        Console.WriteLine("- " + risk);
+        Console.WriteLine("- " + finding);
     }
 }
