@@ -1,7 +1,10 @@
-using SafelyAI.WindowsService;
+using SafelyAI.WindowsService.Workers;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddHostedService<Worker>();
+
+// Enregistrement du Worker de surveillance SAFELY AI
+builder.Services.AddHostedService<SecurityMonitoringWorker>();
 
 var host = builder.Build();
+
 host.Run();

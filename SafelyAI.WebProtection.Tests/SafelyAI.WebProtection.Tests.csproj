@@ -2,6 +2,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SafelyAI.WebProtection\SafelyAI.WebProtection.csproj" />
+    <ProjectReference Include="..\SafelyAI.Maintenance\SafelyAI.Maintenance.csproj" />
+    <ProjectReference Include="..\SafelyAI.Response\SafelyAI.Response.csproj" />
+    <ProjectReference Include="..\SafelyAI.WindowsService\SafelyAI.WindowsService.csproj" />
+    <ProjectReference Include="..\SafelyAI.Infrastructure\SafelyAI.Infrastructure.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
