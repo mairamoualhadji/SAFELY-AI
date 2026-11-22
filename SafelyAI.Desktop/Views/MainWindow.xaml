@@ -1,0 +1,23 @@
+<Window x:Class="SafelyAI.Desktop.Views.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SAFELY AI" Width="1100" Height="680" MinWidth="900" MinHeight="560"
+        Background="{DynamicResource BgBrush}" FontFamily="Segoe UI Variable Text, Segoe UI">
+  <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="230"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource BorderBrush2}" BorderThickness="0,0,1,0" Padding="14">
+      <StackPanel>
+        <TextBlock Text="SAFELY AI" FontSize="20" FontWeight="Bold" Margin="14,6,0,22" Foreground="{DynamicResource AccentBrush}"/>
+        <RadioButton GroupName="nav" Content="Tableau de bord" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Dashboard" IsChecked="True"/>
+        <RadioButton GroupName="nav" Content="Menaces" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Antivirus"/>
+        <RadioButton GroupName="nav" Content="Quarantaine" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Quarantine"/>
+        <RadioButton GroupName="nav" Content="Réseau" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Network"/>
+        <RadioButton GroupName="nav" Content="Système" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="System"/>
+        <RadioButton GroupName="nav" Content="Comptes" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Identity"/>
+        <RadioButton GroupName="nav" Content="Protection Web" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="WebProtection"/>
+        <RadioButton GroupName="nav" Content="Maintenance" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Maintenance"/>
+        <RadioButton GroupName="nav" Content="Rapports" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Reports"/>
+        <RadioButton GroupName="nav" Content="Paramètres" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Settings"/>
+      </StackPanel>
+    </Border>
+    <ContentControl Grid.Column="1" Content="{Binding CurrentView}"/>
+  </Grid>
+</Window>

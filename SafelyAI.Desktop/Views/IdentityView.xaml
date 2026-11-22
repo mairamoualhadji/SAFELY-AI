@@ -1,0 +1,6 @@
+<UserControl x:Class="SafelyAI.Desktop.Views.IdentityView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel Margin="32">
+    <TextBlock Text="Protection des comptes" Style="{StaticResource H1}"/>
+    <TextBlock Text="Alertes sur les mots de passe faibles et les comptes exposés." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}"/>
+  </StackPanel>
+</UserControl>
