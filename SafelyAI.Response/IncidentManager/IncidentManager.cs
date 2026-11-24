@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using SafelyAI.Core.Interfaces;
 using SafelyAI.Core.Models;
 
@@ -10,6 +11,7 @@ namespace SafelyAI.Response.IncidentManager
     public class IncidentManager : IIncidentManager
     {
         private readonly List<SecurityIncident> incidents = new();
+        private readonly ReaderWriterLockSlim incidentsLock = new();
 
         public SecurityIncident CreateIncident(
             string title,
@@ -44,19 +46,43 @@ namespace SafelyAI.Response.IncidentManager
                 CreatedAt = DateTime.Now
             };
 
-            incidents.Add(incident);
+            incidentsLock.EnterWriteLock();
+            try
+            {
+                incidents.Add(incident);
+            }
+            finally
+            {
+                incidentsLock.ExitWriteLock();
+            }
 
             return incident;
         }
 
         public List<SecurityIncident> GetAllIncidents()
         {
-            return incidents.ToList();
+            incidentsLock.EnterReadLock();
+            try
+            {
+                return incidents.ToList();
+            }
+            finally
+            {
+                incidentsLock.ExitReadLock();
+            }
         }
 
         public SecurityIncident? GetIncidentById(Guid id)
         {
-            return incidents.FirstOrDefault(i => i.Id == id);
+            incidentsLock.EnterReadLock();
+            try
+            {
+                return incidents.FirstOrDefault(i => i.Id == id);
+            }
+            finally
+            {
+                incidentsLock.ExitReadLock();
+            }
         }
 
         public bool UpdateIncidentStatus(Guid id, string newStatus)
@@ -64,22 +90,31 @@ namespace SafelyAI.Response.IncidentManager
             string[] validStatuses =
                 { "Ouvert", "En cours", "Résolu" };
 
-            if (!validStatuses.Contains(newStatus))
+            if (string.IsNullOrWhiteSpace(newStatus) ||
+                !validStatuses.Contains(newStatus))
             {
                 return false;
             }
 
-            var incident = GetIncidentById(id);
-
-            if (incident == null)
+            incidentsLock.EnterWriteLock();
+            try
             {
-                return false;
+                var incident = incidents.FirstOrDefault(i => i.Id == id);
+
+                if (incident == null)
+                {
+                    return false;
+                }
+
+                incident.Status = newStatus;
+                incident.UpdatedAt = DateTime.Now;
+
+                return true;
             }
-
-            incident.Status = newStatus;
-            incident.UpdatedAt = DateTime.Now;
-
-            return true;
+            finally
+            {
+                incidentsLock.ExitWriteLock();
+            }
         }
     }
 }

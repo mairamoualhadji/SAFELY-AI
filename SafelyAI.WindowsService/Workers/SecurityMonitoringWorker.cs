@@ -1,78 +1,104 @@
-
-using System;
-using System.Diagnostics;
-using System.Threading;
-using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SafelyAI.Core.Interfaces;
+using SafelyAI.Core.Models;
+using SafelyAI.Maintenance.Diagnostics;
+using SafelyAI.Response.RiskEngine;
 
-namespace SafelyAI.WindowsService.Workers
+namespace SafelyAI.WindowsService.Workers;
+
+public class SecurityMonitoringWorker : BackgroundService
 {
-    public class SecurityMonitoringWorker : BackgroundService
+    private readonly ILogger<SecurityMonitoringWorker> _logger;
+    private readonly SystemDiagnostics _diagnostics;
+    private readonly IIncidentManager _incidentManager;
+    private readonly RiskAnalyzer _riskAnalyzer;
+    private readonly TimeSpan _interval;
+    private readonly double _lowDiskThresholdPercent;
+    private bool _lowDiskAlertActive;
+
+    public SecurityMonitoringWorker(
+        ILogger<SecurityMonitoringWorker> logger,
+        SystemDiagnostics diagnostics,
+        IIncidentManager incidentManager,
+        RiskAnalyzer riskAnalyzer,
+        IConfiguration configuration)
     {
-        private readonly ILogger<SecurityMonitoringWorker> _logger;
+        _logger = logger;
+        _diagnostics = diagnostics;
+        _incidentManager = incidentManager;
+        _riskAnalyzer = riskAnalyzer;
+        _interval = TimeSpan.FromSeconds(Math.Clamp(
+            configuration.GetValue("SecurityMonitoring:IntervalSeconds", 60),
+            10,
+            3600));
+        _lowDiskThresholdPercent = Math.Clamp(
+            configuration.GetValue("SecurityMonitoring:LowDiskThresholdPercent", 10d),
+            1d,
+            50d);
+    }
 
-        public SecurityMonitoringWorker(
-            ILogger<SecurityMonitoringWorker> logger)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("SAFELY AI : surveillance démarrée.");
+        using var timer = new PeriodicTimer(_interval);
+
+        do
         {
-            _logger = logger;
-        }
+            stoppingToken.ThrowIfCancellationRequested();
+            SystemDiagnosticsResult system = _diagnostics.Analyze();
 
-        protected override async Task ExecuteAsync(
-            CancellationToken stoppingToken)
-        {
-            _logger.LogInformation(
-                "SAFELY AI : surveillance demarree.");
-
-            while (!stoppingToken.IsCancellationRequested)
+            if (!system.Success)
             {
-                try
+                _logger.LogError(
+                    "Échec du diagnostic système : {Status}",
+                    system.Status);
+            }
+            else
+            {
+                double freeDiskPercent = system.TotalDiskSpaceGB > 0
+                    ? system.FreeDiskSpaceGB / system.TotalDiskSpaceGB * 100
+                    : 100;
+
+                _logger.LogInformation(
+                    "Diagnostic système terminé. Disque libre : {FreeDiskPercent:F1} %, mémoire disponible : {AvailableMemoryGB:F2} Go.",
+                    freeDiskPercent,
+                    system.AvailableMemoryGB);
+
+                if (freeDiskPercent <= _lowDiskThresholdPercent)
                 {
-                    Process[] processes = Process.GetProcesses();
-
-                    _logger.LogInformation(
-                        "SAFELY AI : {Count} processus actifs detectes.",
-                        processes.Length);
-
-                    foreach (Process process in processes)
+                    if (!_lowDiskAlertActive)
                     {
-                        try
-                        {
-                            _logger.LogInformation(
-                                "Processus : {Name} | PID : {Id}",
-                                process.ProcessName,
-                                process.Id);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(
-                                "Impossible de lire un processus : {Message}",
-                                ex.Message);
-                        }
-                        finally
-                        {
-                            process.Dispose();
-                        }
+                        CreateLowDiskIncident(freeDiskPercent);
+                        _lowDiskAlertActive = true;
                     }
-
-                    await Task.Delay(
-                        TimeSpan.FromSeconds(30),
-                        stoppingToken);
                 }
-                catch (OperationCanceledException)
+                else
                 {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(
-                        ex,
-                        "Erreur pendant la surveillance SAFELY AI.");
+                    _lowDiskAlertActive = false;
                 }
             }
-
-            _logger.LogInformation(
-                "SAFELY AI : surveillance arretee.");
         }
+        while (await timer.WaitForNextTickAsync(stoppingToken));
+
+        _logger.LogInformation("SAFELY AI : surveillance arrêtée.");
+    }
+
+    private void CreateLowDiskIncident(double freeDiskPercent)
+    {
+        int riskScore = (int)Math.Clamp(100 - freeDiskPercent, 0, 100);
+        RiskAnalysisResult risk = _riskAnalyzer.Analyze(riskScore);
+        SecurityIncident incident = _incidentManager.CreateIncident(
+            "Espace disque système faible",
+            $"L'espace disque libre est de {freeDiskPercent:F1} %, sous le seuil configuré de {_lowDiskThresholdPercent:F1} %. Score de risque : {risk.Score}/100.",
+            "Maintenance système",
+            risk.Level);
+
+        _logger.LogWarning(
+            "Incident {IncidentId} créé : {Title} (gravité : {Severity}).",
+            incident.Id,
+            incident.Title,
+            incident.Severity);
     }
 }

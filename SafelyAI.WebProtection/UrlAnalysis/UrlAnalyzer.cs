@@ -29,8 +29,8 @@ public class UrlAnalyzer
             uri.HostNameType == UriHostNameType.IPv6)
             result.Risks.Add("L'adresse utilise une IP au lieu d'un nom de domaine.");
 
-        if (uri.Host.Contains('@'))
-            result.Risks.Add("Présence d'un caractère potentiellement trompeur.");
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+            result.Risks.Add("L'URL contient des informations utilisateur avant le domaine.");
 
         string[] suspiciousWords =
         {
