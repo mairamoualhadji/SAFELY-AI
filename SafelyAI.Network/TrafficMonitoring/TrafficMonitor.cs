@@ -1,0 +1,27 @@
+using System.Net.NetworkInformation;
+namespace SafelyAI.Network.TrafficMonitoring;
+
+public class TrafficMonitor
+{
+    public static (long Sent, long Received) GetTotals()
+    {
+        long sent = 0, received = 0;
+        foreach (var n in NetworkInterface.GetAllNetworkInterfaces()
+                     .Where(n => n.OperationalStatus == OperationalStatus.Up && n.NetworkInterfaceType != NetworkInterfaceType.Loopback))
+        {
+            var s = n.GetIPv4Statistics();
+            sent += s.BytesSent; received += s.BytesReceived;
+        }
+        return (sent, received);
+    }
+
+    // Débit en Ko/s sur une courte durée.
+    public async Task<(double UpKbps, double DownKbps)> MeasureAsync(int milliseconds = 1000)
+    {
+        var a = GetTotals();
+        await Task.Delay(milliseconds);
+        var b = GetTotals();
+        var sec = milliseconds / 1000.0;
+        return ((b.Sent - a.Sent) / 1024.0 / sec, (b.Received - a.Received) / 1024.0 / sec);
+    }
+}
