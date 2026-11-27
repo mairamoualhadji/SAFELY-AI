@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SafelyAI.Desktop</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SafelyAI.Antivirus\SafelyAI.Antivirus.csproj" />
+    <ProjectReference Include="..\SafelyAI.Identity\SafelyAI.Identity.csproj" />
+    <ProjectReference Include="..\SafelyAI.Maintenance\SafelyAI.Maintenance.csproj" />
+    <ProjectReference Include="..\SafelyAI.Network\SafelyAI.Network.csproj" />
+    <ProjectReference Include="..\SafelyAI.SystemMonitor\SafelyAI.SystemMonitor.csproj" />
+    <ProjectReference Include="..\SafelyAI.WebProtection\SafelyAI.WebProtection.csproj" />
+  </ItemGroup>
+</Project>
