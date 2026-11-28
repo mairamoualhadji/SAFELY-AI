@@ -4,13 +4,13 @@ SAFELY AI est une application de sécurité Windows qui regroupe des outils de d
 
 ## Démarrer l’application
 
-- Windows 10 ou 11 (x64) avec .NET 10 Desktop Runtime.
-- Ouvrir `SafelyAI.sln` avec Visual Studio 2026, ou compiler depuis PowerShell avec `dotnet build SafelyAI.sln`.
-- Lancer `SafelyAI.Desktop`.
-- Dans **Antivirus**, les boutons Defender lancent une analyse rapide, complète, d’un dossier ou d’une clé USB avec le moteur Windows. Windows peut demander une élévation UAC. Le résultat de remédiation et l’historique se consultent dans **Sécurité Windows > Protection contre les virus et menaces > Historique de protection**.
+- Pour installer le paquet autonome, extraire `SAFELY-AI-win-x64.zip`, puis exécuter `Install-SafelyAI.ps1` depuis le dossier extrait. L’installation est par utilisateur, sans droit administrateur; le runtime .NET est inclus. Le menu Démarrer crée le raccourci; la désinstallation conserve les données locales sous `%LOCALAPPDATA%\SafelyAI`.
+- Pour compiler depuis les sources, installer le SDK .NET 10 et ouvrir `SafelyAI.sln` avec Visual Studio ou exécuter `dotnet build SafelyAI.sln`.
+- Pour produire un paquet autonome Windows x64 (runtime .NET inclus), exécuter `powershell -ExecutionPolicy Bypass -File scripts\Publish-Windows.ps1`. L’archive est créée dans `artifacts\SAFELY-AI-win-x64.zip`. GitHub Actions compile la solution à chaque push et pull request, puis publie cette archive comme artefact lors d’un push.
+- Le tableau de bord lance en priorité les analyses rapide, complète ou personnalisée avec le moteur Microsoft Defender. Dans **Antivirus**, les analyses Defender sur clé USB et la mise à jour des signatures sont également disponibles. Windows peut demander une élévation UAC. Le détail des remédiations reste consultable dans **Sécurité Windows > Protection contre les virus et menaces > Historique de protection**. Les analyses locales SAFELY AI sont des vérifications complémentaires accessibles dans **Antivirus**.
 - Dans **Paramètres**, la protection en arrière-plan peut être activée pour la session Windows courante. L’agent caché contrôle jusqu’à 20 000 fichiers déjà présents au premier niveau de Téléchargements, puis les nouveaux fichiers stabilisés. Il tente un scan personnalisé Defender sans élévation pour les nouveaux téléchargements, puis exécute son scan local; si Windows refuse la demande Defender, l’échec est journalisé. Il démarre à l’ouverture de session, applique le mode de performance enregistré et écrit son journal dans `%LOCALAPPDATA%\\SafelyAI\\Logs\\background-protection.log`. Il fonctionne en espace utilisateur et ne remplace pas la protection en temps réel de Windows.
 - Le tableau de bord interroge l’état Defender localement. Si Windows ne fournit pas cet état, il l’indique comme indisponible et propose d’ouvrir Sécurité Windows.
-- Dans **Rapports**, l’historique des détections de Microsoft Defender peut être actualisé en lecture seule; jusqu’à 200 éléments sont affichés et inclus dans l’export de la session si la lecture a réussi.
+- Dans **Rapports**, l’historique des détections de Microsoft Defender peut être actualisé en lecture seule; jusqu’à 200 éléments sont affichés. Les 500 derniers scans Defender et les 2 000 derniers événements d’activité locale sont conservés dans `%LOCALAPPDATA%\SafelyAI\History` et inclus dans l’export.
 - Pour expliquer un indicateur, l’assistant facultatif utilise Ollama uniquement sur `localhost`; il reçoit le nom de l’indicateur et des métadonnées, jamais le contenu du fichier. Sans Ollama, une explication de secours est fournie.
 
 ## Ce que fait le scanner SAFELY AI

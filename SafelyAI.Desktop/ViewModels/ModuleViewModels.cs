@@ -262,7 +262,7 @@ public sealed class AntivirusViewModel : ObservableObject
         {
             var result = await _defender.RunScanAsync(type, path);
             DefenderScanStatus = result.Message;
-            Session.AddActivity("Microsoft Defender", DesktopSession.ScanLabel(type), result.Message);
+            Session.RecordDefenderScan(type, path, result);
             Session.AddNotification(result.Outcome == DefenderScanOutcome.Completed ? "Analyse Microsoft Defender terminée" : "Vérification Microsoft Defender requise",
                 result.Message, result.Outcome == DefenderScanOutcome.Completed ? "Information" : "Avertissement");
         }
@@ -775,8 +775,9 @@ public sealed class ReportsViewModel : ObservableObject
     private readonly MicrosoftDefenderService _defender = new();
     private string _defenderHistoryStatus = "Historique Microsoft Defender non actualisé.";
     public ObservableCollection<ScanHistoryEntry> ScanHistory => _session.ScanHistory;
+    public ObservableCollection<DefenderScanHistoryEntry> DefenderScanHistory => _session.DefenderScanHistory;
     public ObservableCollection<ThreatHistoryRecord> ThreatHistory => _session.ThreatHistory;
-    public ObservableCollection<ActivityEntry> Activity => _session.Activity;
+    public ObservableCollection<ActivityEntry> Activity => _session.ActivityHistory;
     public ObservableCollection<DefenderThreatDetection> DefenderThreats { get; } = [];
     public string DefenderHistoryStatus { get => _defenderHistoryStatus; private set => Set(ref _defenderHistoryStatus, value); }
     public RelayCommand RefreshThreatHistoryCommand { get; }
@@ -815,12 +816,14 @@ public sealed class ReportsViewModel : ObservableObject
         if (dialog.ShowDialog() != true) return;
         var lines = new List<string> { "SAFELY AI — Rapport de sécurité", $"Généré le {DateTime.Now:dd/MM/yyyy à HH:mm}", "", "NOTE : Les résultats heuristiques sont à vérifier. La base locale comprend EICAR, les empreintes du flux MalwareBazaar facultatif et les signatures SHA-256 ajoutées par l’utilisateur.", "", "SESSIONS D’ANALYSE" };
         lines.AddRange(session.ScanHistory.Select(x => $"{x.FinishedAt:dd/MM/yyyy HH:mm} | {x.Type} | {x.Scope} | {x.FilesScanned} fichiers analysés | {x.ThreatsFound} indicateur(s)"));
+        lines.AddRange(["", "SCANS MICROSOFT DEFENDER"]);
+        lines.AddRange(session.DefenderScanHistory.Select(x => $"{x.FinishedAt:dd/MM/yyyy HH:mm:ss} | {x.Type} | {x.Scope} | {x.Outcome} | code {x.ExitCode} | {x.Message}"));
         lines.AddRange(["", "HISTORIQUE DES MENACES"]);
         lines.AddRange(session.ThreatHistory.Select(x => $"{x.DetectedAt:dd/MM/yyyy HH:mm} | {x.Status} | {x.Severity} | {x.Name} | SHA-256 {x.Sha256} | {x.Location}"));
         lines.AddRange(["", "DÉTECTIONS MICROSOFT DEFENDER (dernière lecture de cette session)"]);
         lines.AddRange(defenderThreats.Select(x => $"{x.InitialDetectionTime:dd/MM/yyyy HH:mm:ss} | {x.StatusLabel} | Action {x.ActionLabel} | menace {x.ThreatId} | {x.ResourcesLabel}"));
         lines.AddRange(["", "ACTIVITÉ RÉCENTE"]);
-        lines.AddRange(session.Activity.Select(x => $"{x.CreatedAt:dd/MM/yyyy HH:mm:ss} | {x.Category} | {x.Title} | {x.Details}"));
+        lines.AddRange(session.ActivityHistory.Select(x => $"{x.CreatedAt:dd/MM/yyyy HH:mm:ss} | {x.Category} | {x.Title} | {x.Details}"));
         try
         {
             File.WriteAllLines(dialog.FileName, lines);

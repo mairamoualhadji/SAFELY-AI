@@ -20,6 +20,8 @@ public sealed class DesktopSession : ObservableObject
     private readonly QuarantineManager _quarantine = new();
     private readonly FileBackupManager _backups = new();
     private readonly ScanHistoryStore _scanHistoryStore = new();
+    private readonly ActivityHistoryStore _activityHistoryStore = new();
+    private readonly DefenderScanHistoryStore _defenderScanHistoryStore = new();
     private readonly ThreatHistoryStore _threatHistoryStore = new();
     private readonly FileChangeHistoryStore _fileChangeHistoryStore = new();
     private DownloadMonitor? _downloadMonitor;
@@ -34,6 +36,8 @@ public sealed class DesktopSession : ObservableObject
 
     public ObservableCollection<ScanHistoryEntry> ScanHistory { get; } = [];
     public ObservableCollection<ActivityEntry> Activity { get; } = [];
+    public ObservableCollection<ActivityEntry> ActivityHistory { get; } = [];
+    public ObservableCollection<DefenderScanHistoryEntry> DefenderScanHistory { get; } = [];
     public ObservableCollection<DesktopNotification> Notifications { get; } = [];
     public ObservableCollection<ThreatListItem> Threats { get; } = [];
     public ObservableCollection<ThreatHistoryRecord> ThreatHistory { get; } = [];
@@ -42,6 +46,7 @@ public sealed class DesktopSession : ObservableObject
     public ObservableCollection<FileChangeListItem> FileChanges { get; } = [];
     private bool _isDownloadMonitoring;
     private bool _isFolderMonitoring;
+    private bool _activityPersistenceWarningShown;
     public bool IsDownloadMonitoring { get => _isDownloadMonitoring; private set => Set(ref _isDownloadMonitoring, value); }
     public bool IsFolderMonitoring { get => _isFolderMonitoring; private set => Set(ref _isFolderMonitoring, value); }
     public string MonitoredFolder { get; private set; } = "Aucun dossier surveillé";
@@ -77,6 +82,10 @@ public sealed class DesktopSession : ObservableObject
         Notifications.CollectionChanged += (_, _) => OnPropertyChanged(nameof(NotificationCount));
         RefreshQuarantine();
         RefreshBackups();
+        var savedActivity = _activityHistoryStore.Read().Take(2_000).ToArray();
+        foreach (var item in savedActivity.Reverse()) ActivityHistory.Add(item);
+        foreach (var item in savedActivity.Take(100).Reverse()) Activity.Add(item);
+        foreach (var item in _defenderScanHistoryStore.Read().Take(500).Reverse()) DefenderScanHistory.Add(item);
         foreach (var item in _scanHistoryStore.Read()) ScanHistory.Add(new(item.Type, item.Scope, item.FilesScanned, item.ThreatsFound, item.FinishedAt));
         LastScan = ScanHistory.FirstOrDefault();
         foreach (var finding in _threatHistoryStore.Read())
@@ -213,8 +222,47 @@ public sealed class DesktopSession : ObservableObject
 
     public void AddActivity(string category, string title, string details)
     {
-        Activity.Insert(0, new ActivityEntry(category, title, details, DateTime.Now));
+        category = Limit(category, 80, "Général");
+        title = Limit(title, 200, "Événement");
+        details = Limit(details, 8_000, "");
+        var entry = new ActivityEntry(category, title, details, DateTime.Now);
+        Activity.Insert(0, entry);
         if (Activity.Count > 100) Activity.RemoveAt(Activity.Count - 1);
+        ActivityHistory.Insert(0, entry);
+        if (ActivityHistory.Count > 2_000) ActivityHistory.RemoveAt(ActivityHistory.Count - 1);
+        try { _activityHistoryStore.Append(entry); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException or System.Text.Json.JsonException)
+        {
+            if (_activityPersistenceWarningShown) return;
+            _activityPersistenceWarningShown = true;
+            AddNotification("Historique local indisponible", $"Les événements restent visibles pendant cette session, mais ne seront pas conservés après fermeture : {exception.Message}", "Avertissement");
+        }
+    }
+
+    private static string Limit(string? value, int maximumLength, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        var trimmed = value.Trim();
+        return trimmed.Length <= maximumLength ? trimmed : trimmed[..maximumLength];
+    }
+
+    public void RecordDefenderScan(ScanType type, string? path, DefenderScanResult result)
+    {
+        var record = new DefenderScanHistoryEntry(
+            ScanLabel(type),
+            string.IsNullOrWhiteSpace(path) ? (type == ScanType.Quick ? "Portée rapide Windows" : "Ordinateur") : Limit(path, 2_000, "Chemin personnalisé"),
+            result.Outcome == DefenderScanOutcome.Completed ? "Commande terminée · vérifiez Sécurité Windows" : "À vérifier dans Sécurité Windows",
+            Limit(result.Message, 2_000, "Résultat non fourni"),
+            result.ExitCode,
+            DateTime.Now);
+        DefenderScanHistory.Insert(0, record);
+        if (DefenderScanHistory.Count > 500) DefenderScanHistory.RemoveAt(DefenderScanHistory.Count - 1);
+        try { _defenderScanHistoryStore.Append(record); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException or System.Text.Json.JsonException)
+        {
+            AddNotification("Historique des scans Defender indisponible", $"Le résultat reste visible dans l’activité de cette session : {exception.Message}", "Avertissement");
+        }
+        AddActivity("Microsoft Defender", record.Type, $"{record.Outcome} · code {record.ExitCode} · {record.Message}");
     }
 
     public static string ScanLabel(ScanType type) => type switch

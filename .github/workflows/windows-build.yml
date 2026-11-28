@@ -1,0 +1,51 @@
+name: Windows build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SafelyAI.sln
+
+      - name: Build solution
+        run: dotnet build SafelyAI.sln --configuration Release --no-restore
+
+      - name: Publish standalone Windows app
+        if: github.event_name != 'pull_request'
+        run: >-
+          dotnet publish SafelyAI.Desktop/SafelyAI.Desktop.csproj
+          --configuration Release --runtime win-x64 --self-contained true
+          -p:UseAppHost=true -p:PublishSingleFile=false
+          -o artifacts/publish/win-x64
+
+      - name: Package standalone app
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          Copy-Item scripts/Install-SafelyAI.ps1 artifacts/publish/win-x64/Install-SafelyAI.ps1
+          Copy-Item scripts/Uninstall-SafelyAI.ps1 artifacts/publish/win-x64/Uninstall-SafelyAI.ps1
+          Compress-Archive -Path artifacts/publish/win-x64/* -DestinationPath artifacts/SAFELY-AI-win-x64.zip -Force
+
+      - name: Upload standalone app
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAFELY-AI-win-x64
+          path: artifacts/SAFELY-AI-win-x64.zip
+          if-no-files-found: error
