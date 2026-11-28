@@ -20,6 +20,7 @@ public class MainViewModel : ObservableObject
     private string _currentPageTitle = "Vue d’ensemble";
     private string _currentPageDescription = "L’essentiel de votre sécurité, réuni au même endroit.";
     private bool _isDarkMode = true;
+    private readonly AntivirusViewModel _antivirusViewModel;
 
     public DesktopSession Session { get; } = new();
     private readonly DashboardView _dashboard;
@@ -54,7 +55,8 @@ public class MainViewModel : ObservableObject
     public MainViewModel()
     {
         _dashboard = new DashboardView { DataContext = new DashboardViewModel(Session) };
-        _antivirus = new AntivirusView { DataContext = new AntivirusViewModel(Session) };
+        _antivirusViewModel = new AntivirusViewModel(Session);
+        _antivirus = new AntivirusView { DataContext = _antivirusViewModel };
         _quarantine = new QuarantineView { DataContext = new QuarantineViewModel(Session) };
         _network = new NetworkView { DataContext = new NetworkViewModel() };
         _system = new SystemView { DataContext = new SystemViewModel() };
@@ -110,4 +112,6 @@ public class MainViewModel : ObservableObject
     {
         CurrentView = view; CurrentPageTitle = title; CurrentPageDescription = description;
     }
+
+    public void Dispose() => _antivirusViewModel.Dispose();
 }

@@ -14,16 +14,19 @@ public sealed class FileBehaviorMonitor : IDisposable
     private readonly TimeSpan _window;
     public event EventHandler<FileActivityBurst>? SuspiciousBurstDetected;
     public event EventHandler<FileChangeEvent>? FileChanged;
+    public event Action<string>? MonitoringError;
     public FileBehaviorMonitor(string selectedDirectory, int threshold = 40, TimeSpan? window = null)
     {
         if (!Directory.Exists(selectedDirectory)) throw new DirectoryNotFoundException(selectedDirectory);
         _threshold = threshold; _window = window ?? TimeSpan.FromSeconds(10);
-        _watcher = new FileSystemWatcher(Path.GetFullPath(selectedDirectory)) { IncludeSubdirectories = true, NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size, EnableRaisingEvents = false };
-        _watcher.Changed += OnChange; _watcher.Created += OnChange; _watcher.Renamed += OnRename; _watcher.Deleted += OnChange;
+        _watcher = new FileSystemWatcher(Path.GetFullPath(selectedDirectory)) { IncludeSubdirectories = true, InternalBufferSize = 32 * 1024, NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size, EnableRaisingEvents = false };
+        _watcher.Changed += OnChange; _watcher.Created += OnChange; _watcher.Renamed += OnRename; _watcher.Deleted += OnChange; _watcher.Error += OnWatcherError;
     }
     public void Start() => _watcher.EnableRaisingEvents = true;
     private void OnRename(object sender, RenamedEventArgs e) { Record(e.FullPath, "Renamed"); }
     private void OnChange(object sender, FileSystemEventArgs e) { Record(e.FullPath, e.ChangeType.ToString()); }
+    private void OnWatcherError(object sender, ErrorEventArgs e) =>
+        MonitoringError?.Invoke("Windows a perdu des événements dans le dossier protégé. Cette période de surveillance est incomplète; inspectez le dossier et réactivez la surveillance.");
     private void Record(string path, string kind)
     {
         var now = DateTime.Now;

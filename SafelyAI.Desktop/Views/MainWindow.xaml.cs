@@ -3,7 +3,7 @@ using SafelyAI.Desktop.ViewModels;
 namespace SafelyAI.Desktop.Views;
 public partial class MainWindow : Window
 {
-    public MainWindow() { InitializeComponent(); DataContext = new MainViewModel(); Closed += (_, _) => (DataContext as MainViewModel)?.Session.Dispose(); }
+    public MainWindow() { InitializeComponent(); DataContext = new MainViewModel(); Closed += (_, _) => { if (DataContext is MainViewModel viewModel) { viewModel.Dispose(); viewModel.Session.Dispose(); } }; }
 
     private void NotificationsButton_OnClick(object sender, RoutedEventArgs e)
     {

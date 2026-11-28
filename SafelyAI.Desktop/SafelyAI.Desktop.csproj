@@ -8,6 +8,7 @@
     <RootNamespace>SafelyAI.Desktop</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\SafelyAI.AI\SafelyAI.AI.csproj" />
     <ProjectReference Include="..\SafelyAI.Antivirus\SafelyAI.Antivirus.csproj" />
     <ProjectReference Include="..\SafelyAI.Identity\SafelyAI.Identity.csproj" />
     <ProjectReference Include="..\SafelyAI.Maintenance\SafelyAI.Maintenance.csproj" />

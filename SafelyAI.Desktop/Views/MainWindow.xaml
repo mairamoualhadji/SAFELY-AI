@@ -34,8 +34,8 @@
         </ScrollViewer>
         <Border Grid.Row="3" Style="{StaticResource SidebarStatusCard}" Margin="0,16,0,0">
           <StackPanel>
-            <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="{DynamicResource WarningBrush}" VerticalAlignment="Center"/><TextBlock Text="  Scanner local actif" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold" FontSize="12"/></StackPanel>
-            <TextBlock Text="Analyse heuristique et empreintes locales. Ce prototype ne remplace pas un antivirus commercial." TextWrapping="Wrap" Margin="0,7,0,0" Foreground="{DynamicResource MutedBrush}" FontSize="11"/>
+            <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="{DynamicResource WarningBrush}" VerticalAlignment="Center"/><TextBlock Text="  Analyse SAFELY AI + Windows" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold" FontSize="12"/></StackPanel>
+            <TextBlock Text="Les scans Defender utilisent le moteur Windows; les indicateurs locaux les complètent sans remplacer la protection en temps réel." TextWrapping="Wrap" Margin="0,7,0,0" Foreground="{DynamicResource MutedBrush}" FontSize="11"/>
           </StackPanel>
         </Border>
       </Grid>

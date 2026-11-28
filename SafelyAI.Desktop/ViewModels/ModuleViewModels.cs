@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -6,6 +7,8 @@ using Microsoft.Win32;
 using SafelyAI.Desktop.Helpers;
 using SafelyAI.Desktop.Models;
 using SafelyAI.Desktop.Services;
+using SafelyAI.AI.OllamaClient;
+using SafelyAI.AI.ThreatClassification;
 using SafelyAI.Identity.AccountAudit;
 using SafelyAI.Identity.PasswordPolicy;
 using SafelyAI.Maintenance.Diagnostics;
@@ -21,6 +24,7 @@ using SafelyAI.WebProtection.DownloadAnalysis;
 using SafelyAI.WebProtection.PhishingDetection;
 using SafelyAI.WebProtection.UrlAnalysis;
 using System.Windows;
+using System.Windows.Threading;
 
 namespace SafelyAI.Desktop.ViewModels;
 
@@ -42,14 +46,40 @@ public sealed class AntivirusViewModel : ObservableObject
     public RelayCommand RestoreBackupCommand { get; }
     public RelayCommand RefreshUsbCommand { get; }
     public RelayCommand UsbScanCommand { get; }
+    public RelayCommand DefenderQuickScanCommand { get; }
+    public RelayCommand DefenderFullScanCommand { get; }
+    public RelayCommand DefenderCustomScanCommand { get; }
+    public RelayCommand DefenderUsbScanCommand { get; }
+    public RelayCommand UpdateDefenderSignaturesCommand { get; }
+    public RelayCommand ExplainThreatCommand { get; }
+    public RelayCommand ConfigureSignatureFeedCommand { get; }
+    public RelayCommand UpdateSignatureFeedCommand { get; }
+    public RelayCommand RemoveSignatureFeedKeyCommand { get; }
     public ObservableCollection<string> RemovableDrives { get; } = [];
+    private readonly MicrosoftDefenderService _defender = new();
+    private bool _isDefenderScanRunning;
+    private string _defenderScanStatus = "Les analyses Microsoft Defender utilisent le moteur et les signatures Windows.";
+    public bool IsDefenderScanRunning { get => _isDefenderScanRunning; private set { if (Set(ref _isDefenderScanRunning, value)) OnPropertyChanged(nameof(CanStartDefenderScan)); } }
+    public bool CanStartDefenderScan => !IsDefenderScanRunning && !Session.IsScanRunning;
+    public string DefenderScanStatus { get => _defenderScanStatus; private set => Set(ref _defenderScanStatus, value); }
+    private bool _isUpdatingSignatureFeed;
+    private string _signatureFeedStatus = "Flux de signatures non configuré. Une clé API MalwareBazaar est requise.";
+    private DispatcherTimer? _signatureFeedTimer;
+    public bool IsUpdatingSignatureFeed { get => _isUpdatingSignatureFeed; private set { if (Set(ref _isUpdatingSignatureFeed, value)) OnPropertyChanged(nameof(CanUpdateSignatureFeed)); } }
+    public bool CanUpdateSignatureFeed => !IsUpdatingSignatureFeed;
+    public string SignatureFeedStatus { get => _signatureFeedStatus; private set => Set(ref _signatureFeedStatus, value); }
     private string? _selectedRemovableDrive;
     public string? SelectedRemovableDrive { get => _selectedRemovableDrive; set => Set(ref _selectedRemovableDrive, value); }
     public BackupListItem? SelectedBackup { get => _selectedBackup; set { if (Set(ref _selectedBackup, value)) OnPropertyChanged(nameof(CanRestoreBackup)); } }
     public bool CanRestoreBackup => SelectedBackup is not null;
     public string DownloadMonitorLabel => Session.IsDownloadMonitoring ? "Arrêter la surveillance des téléchargements" : "Surveiller les téléchargements";
     public string FolderMonitorLabel => Session.IsFolderMonitoring ? "Arrêter la surveillance du dossier" : "Surveiller un dossier protégé";
-    public ThreatListItem? SelectedThreat { get => _selectedThreat; set { if (Set(ref _selectedThreat, value)) OnPropertyChanged(nameof(CanQuarantine)); } }
+    public ThreatListItem? SelectedThreat { get => _selectedThreat; set { if (Set(ref _selectedThreat, value)) { OnPropertyChanged(nameof(CanQuarantine)); OnPropertyChanged(nameof(CanExplainThreat)); ThreatExplanationText = "Sélectionnez « Expliquer avec l’IA locale » pour examiner cet indicateur."; } } }
+    private bool _isExplainingThreat;
+    private string _threatExplanation = "Sélectionnez un indicateur pour obtenir une explication.";
+    public bool IsExplainingThreat { get => _isExplainingThreat; private set => Set(ref _isExplainingThreat, value); }
+    public string ThreatExplanationText { get => _threatExplanation; private set => Set(ref _threatExplanation, value); }
+    public bool CanExplainThreat => SelectedThreat is not null && !IsExplainingThreat;
     public bool CanQuarantine => SelectedThreat is not null && !IsScanRunning;
     public bool CanStartScan => Session.CanStartScan;
     public bool IsScanRunning => Session.IsScanRunning;
@@ -70,17 +100,209 @@ public sealed class AntivirusViewModel : ObservableObject
         RestoreBackupCommand = new(_ => RestoreBackup());
         RefreshUsbCommand = new(_ => RefreshUsbDrives());
         UsbScanCommand = new(_ => { if (SelectedRemovableDrive is { } drive) _ = Session.RunScanAsync(ScanType.Usb, drive); });
+        DefenderQuickScanCommand = new(_ => _ = RunDefenderScanAsync(ScanType.Quick));
+        DefenderFullScanCommand = new(_ => _ = RunDefenderScanAsync(ScanType.Full));
+        DefenderCustomScanCommand = new(_ => SelectCustomFolderForDefender());
+        DefenderUsbScanCommand = new(_ => { if (SelectedRemovableDrive is { } drive) _ = RunDefenderScanAsync(ScanType.Usb, drive); });
+        UpdateDefenderSignaturesCommand = new(_ => _ = UpdateDefenderSignaturesAsync());
+        ExplainThreatCommand = new(_ => _ = ExplainSelectedThreatAsync());
+        ConfigureSignatureFeedCommand = new(_ => ConfigureSignatureFeed());
+        UpdateSignatureFeedCommand = new(_ => _ = UpdateSignatureFeedAsync());
+        RemoveSignatureFeedKeyCommand = new(_ => RemoveSignatureFeedKey());
         RefreshUsbDrives();
+        if (Session.SignatureFeedUpdatedAtUtc is { } cachedAt)
+            SignatureFeedStatus = $"Cache hors ligne disponible · actualisé le {cachedAt.ToLocalTime():dd/MM/yyyy HH:mm}.";
         Session.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(DesktopSession.IsScanRunning) or nameof(DesktopSession.ScanProgress))
             {
                 OnPropertyChanged(nameof(CanStartScan)); OnPropertyChanged(nameof(IsScanRunning)); OnPropertyChanged(nameof(Progress));
                 OnPropertyChanged(nameof(CanQuarantine));
+                OnPropertyChanged(nameof(CanStartDefenderScan));
             }
             if (e.PropertyName == nameof(DesktopSession.IsDownloadMonitoring)) OnPropertyChanged(nameof(DownloadMonitorLabel));
             if (e.PropertyName == nameof(DesktopSession.IsFolderMonitoring)) OnPropertyChanged(nameof(FolderMonitorLabel));
         };
+        try
+        {
+            if (SafelyAI.Antivirus.SignatureEngine.WindowsCredentialStore.HasApiKey())
+            {
+                SignatureFeedStatus = "Clé enregistrée dans le Gestionnaire d’identifiants Windows. Vérification du flux…";
+                _ = UpdateSignatureFeedAsync();
+                StartSignatureFeedTimer();
+            }
+        }
+        catch { SignatureFeedStatus = "Impossible de lire les identifiants Windows. Réessayez de configurer le flux."; }
+    }
+
+    public void Dispose()
+    {
+        _signatureFeedTimer?.Stop();
+        _signatureFeedTimer = null;
+    }
+
+    private void StartSignatureFeedTimer()
+    {
+        if (_signatureFeedTimer is not null) return;
+        _signatureFeedTimer = new DispatcherTimer(TimeSpan.FromMinutes(45), DispatcherPriority.Background,
+            (_, _) => _ = UpdateSignatureFeedAsync(), Application.Current.Dispatcher);
+        _signatureFeedTimer.Start();
+    }
+
+    private void ConfigureSignatureFeed()
+    {
+        var dialog = new SafelyAI.Desktop.Views.SignatureFeedKeyWindow { Owner = Application.Current.MainWindow };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            SafelyAI.Antivirus.SignatureEngine.WindowsCredentialStore.SaveApiKey(dialog.ApiKey);
+            SignatureFeedStatus = "Clé stockée dans le Gestionnaire d’identifiants Windows. Mise à jour en cours…";
+            StartSignatureFeedTimer();
+            _ = UpdateSignatureFeedAsync();
+        }
+        catch (Exception ex)
+        {
+            SignatureFeedStatus = $"Impossible d’enregistrer la clé : {ex.Message}";
+            Session.AddNotification("Configuration du flux impossible", SignatureFeedStatus, "Avertissement");
+        }
+    }
+
+    private void RemoveSignatureFeedKey()
+    {
+        if (MessageBox.Show("Supprimer la clé API MalwareBazaar du Gestionnaire d’identifiants Windows ? Le cache de signatures déjà téléchargé restera disponible hors ligne.",
+                "Supprimer la clé du flux", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try
+        {
+            SafelyAI.Antivirus.SignatureEngine.WindowsCredentialStore.DeleteApiKey();
+            _signatureFeedTimer?.Stop();
+            _signatureFeedTimer = null;
+            SignatureFeedStatus = Session.SignatureFeedUpdatedAtUtc is { } cachedAt
+                ? $"Clé supprimée. Cache hors ligne conservé · actualisé le {cachedAt.ToLocalTime():dd/MM/yyyy HH:mm}."
+                : "Clé supprimée. Aucune version du flux n’est enregistrée localement.";
+        }
+        catch (Exception ex)
+        {
+            SignatureFeedStatus = $"Impossible de supprimer la clé : {ex.Message}";
+            Session.AddNotification("Suppression de clé impossible", ex.Message, "Avertissement");
+        }
+    }
+
+    private async Task UpdateSignatureFeedAsync()
+    {
+        if (IsUpdatingSignatureFeed) return;
+        if (!SafelyAI.Antivirus.SignatureEngine.WindowsCredentialStore.TryRead(out var apiKey))
+        {
+            SignatureFeedStatus = "Configurez votre clé API MalwareBazaar pour activer les mises à jour.";
+            return;
+        }
+        IsUpdatingSignatureFeed = true;
+        SignatureFeedStatus = "Téléchargement et validation des empreintes…";
+        try
+        {
+            var result = await Session.UpdateSignatureFeedAsync(apiKey);
+            SignatureFeedStatus = $"{result.SignatureCount:N0} empreintes SHA-256 · {result.Source} · actualisé {result.UpdatedAtUtc.ToLocalTime():dd/MM/yyyy HH:mm}. Aucun échantillon n’a été téléchargé.";
+            Session.AddActivity("Signatures", "Flux de signatures actualisé", SignatureFeedStatus);
+            Session.AddNotification("Signatures actualisées", SignatureFeedStatus, "Information");
+        }
+        catch (Exception ex)
+        {
+            SignatureFeedStatus = Session.SignatureFeedUpdatedAtUtc is { } cachedAt
+                ? $"Mise à jour échouée; le cache local du {cachedAt.ToLocalTime():dd/MM/yyyy HH:mm} est conservé. {ex.Message}"
+                : $"Mise à jour échouée; aucune version du flux n’est enregistrée localement. {ex.Message}";
+            Session.AddActivity("Signatures", "Échec de mise à jour du flux", ex.Message);
+            Session.AddNotification("Flux de signatures indisponible", SignatureFeedStatus, "Avertissement");
+        }
+        finally { IsUpdatingSignatureFeed = false; }
+    }
+
+    private async Task ExplainSelectedThreatAsync()
+    {
+        var threat = SelectedThreat;
+        if (threat is null || IsExplainingThreat) return;
+        IsExplainingThreat = true;
+        OnPropertyChanged(nameof(CanExplainThreat));
+        ThreatExplanationText = "Explication en cours… Si Ollama est installé et démarré, le modèle local va analyser les indices; sinon une explication de secours sera affichée.";
+        try
+        {
+            var level = threat.Severity.ToLowerInvariant() switch
+            {
+                "critical" or "critique" => ThreatLevel.Critical,
+                "high" or "élevé" => ThreatLevel.High,
+                "medium" or "modéré" => ThreatLevel.Medium,
+                "low" or "faible" => ThreatLevel.Low,
+                _ => ThreatLevel.Info
+            };
+            var reasons = new[] { $"Empreinte SHA-256 : {threat.Sha256}", "Le nom et le niveau proviennent des règles locales du scanner; ils peuvent être incomplets." };
+            using var ollama = new OllamaService();
+            ThreatExplanationText = await new ThreatExplanation(ollama).ExplainAsync(threat.Name, level, reasons);
+        }
+        catch (Exception ex)
+        {
+            ThreatExplanationText = $"L’assistant local n’a pas pu répondre : {ex.Message}";
+        }
+        finally
+        {
+            IsExplainingThreat = false;
+            OnPropertyChanged(nameof(CanExplainThreat));
+        }
+    }
+
+    private void SelectCustomFolderForDefender()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choisir le dossier à analyser avec Microsoft Defender", Multiselect = false };
+        if (dialog.ShowDialog() == true) _ = RunDefenderScanAsync(ScanType.Custom, dialog.FolderName);
+    }
+
+    private async Task RunDefenderScanAsync(ScanType type, string? path = null)
+    {
+        if (!CanStartDefenderScan) return;
+        IsDefenderScanRunning = true;
+        DefenderScanStatus = "Demande d’analyse Microsoft Defender… Windows peut demander une autorisation UAC. La correction des menaces suit les paramètres de Windows.";
+        try
+        {
+            var result = await _defender.RunScanAsync(type, path);
+            DefenderScanStatus = result.Message;
+            Session.AddActivity("Microsoft Defender", DesktopSession.ScanLabel(type), result.Message);
+            Session.AddNotification(result.Outcome == DefenderScanOutcome.Completed ? "Analyse Microsoft Defender terminée" : "Vérification Microsoft Defender requise",
+                result.Message, result.Outcome == DefenderScanOutcome.Completed ? "Information" : "Avertissement");
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            DefenderScanStatus = "La demande d’autorisation Windows a été refusée; l’analyse n’a pas démarré.";
+            Session.AddNotification("Analyse Defender annulée", DefenderScanStatus, "Information");
+        }
+        catch (Exception ex)
+        {
+            DefenderScanStatus = $"Analyse Microsoft Defender impossible : {ex.Message}";
+            Session.AddNotification("Analyse Microsoft Defender impossible", ex.Message, "Avertissement");
+        }
+        finally { IsDefenderScanRunning = false; }
+    }
+
+    private async Task UpdateDefenderSignaturesAsync()
+    {
+        if (!CanStartDefenderScan) return;
+        IsDefenderScanRunning = true;
+        DefenderScanStatus = "Demande d’actualisation des signatures Defender… Windows peut demander une autorisation UAC.";
+        try
+        {
+            var result = await _defender.UpdateSignaturesAsync();
+            DefenderScanStatus = result.Message;
+            Session.AddActivity("Microsoft Defender", "Mise à jour des signatures demandée", result.Message);
+            Session.AddNotification(result.Outcome == DefenderScanOutcome.Completed ? "Mise à jour Defender terminée" : "Mise à jour Defender à vérifier", result.Message,
+                result.Outcome == DefenderScanOutcome.Completed ? "Information" : "Avertissement");
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            DefenderScanStatus = "La demande UAC a été refusée; aucune mise à jour n’a démarré.";
+            Session.AddNotification("Mise à jour Defender annulée", DefenderScanStatus, "Information");
+        }
+        catch (Exception ex)
+        {
+            DefenderScanStatus = $"Mise à jour Defender impossible : {ex.Message}";
+            Session.AddNotification("Mise à jour Defender impossible", ex.Message, "Avertissement");
+        }
+        finally { IsDefenderScanRunning = false; }
     }
 
     private void SelectCustomFolder()
@@ -547,17 +769,56 @@ public sealed class MaintenanceViewModel : ObservableObject
     }
 }
 
-public sealed class ReportsViewModel(DesktopSession session) : ObservableObject
+public sealed class ReportsViewModel : ObservableObject
 {
-    public ObservableCollection<ScanHistoryEntry> ScanHistory => session.ScanHistory;
-    public ObservableCollection<ActivityEntry> Activity => session.Activity;
-    public RelayCommand ExportCommand { get; } = new(_ => Export(session));
-    private static void Export(DesktopSession session)
+    private readonly DesktopSession _session;
+    private readonly MicrosoftDefenderService _defender = new();
+    private string _defenderHistoryStatus = "Historique Microsoft Defender non actualisé.";
+    public ObservableCollection<ScanHistoryEntry> ScanHistory => _session.ScanHistory;
+    public ObservableCollection<ThreatHistoryRecord> ThreatHistory => _session.ThreatHistory;
+    public ObservableCollection<ActivityEntry> Activity => _session.Activity;
+    public ObservableCollection<DefenderThreatDetection> DefenderThreats { get; } = [];
+    public string DefenderHistoryStatus { get => _defenderHistoryStatus; private set => Set(ref _defenderHistoryStatus, value); }
+    public RelayCommand RefreshThreatHistoryCommand { get; }
+    public RelayCommand RefreshDefenderThreatHistoryCommand { get; }
+    public RelayCommand ExportCommand { get; }
+
+    public ReportsViewModel(DesktopSession session)
+    {
+        _session = session;
+        RefreshThreatHistoryCommand = new(_ => _session.RefreshThreatHistory());
+        RefreshDefenderThreatHistoryCommand = new(_ => _ = RefreshDefenderThreatHistoryAsync());
+        ExportCommand = new(_ => Export(_session, DefenderThreats));
+    }
+
+    private async Task RefreshDefenderThreatHistoryAsync()
+    {
+        DefenderHistoryStatus = "Lecture de l’historique Microsoft Defender…";
+        try
+        {
+            var result = await _defender.GetThreatHistoryAsync();
+            DefenderHistoryStatus = result.Message;
+            if (!result.Available) return;
+            DefenderThreats.Clear();
+            foreach (var detection in result.Detections) DefenderThreats.Add(detection);
+            DefenderHistoryStatus = $"{result.Message} · actualisé le {result.RetrievedAt:dd/MM/yyyy à HH:mm:ss}.";
+        }
+        catch (Exception exception)
+        {
+            DefenderHistoryStatus = $"Historique Microsoft Defender indisponible : {exception.Message}";
+        }
+    }
+
+    private static void Export(DesktopSession session, IEnumerable<DefenderThreatDetection> defenderThreats)
     {
         var dialog = new SaveFileDialog { Title = "Enregistrer le rapport SAFELY AI", FileName = $"safelyai-rapport-{DateTime.Now:yyyyMMdd-HHmm}.txt", Filter = "Rapport texte (*.txt)|*.txt" };
         if (dialog.ShowDialog() != true) return;
-        var lines = new List<string> { "SAFELY AI — Rapport de sécurité", $"Généré le {DateTime.Now:dd/MM/yyyy à HH:mm}", "", "NOTE : Les résultats heuristiques sont à vérifier. La base locale comprend EICAR et les signatures SHA-256 ajoutées par l’utilisateur.", "", "SESSIONS D’ANALYSE" };
+        var lines = new List<string> { "SAFELY AI — Rapport de sécurité", $"Généré le {DateTime.Now:dd/MM/yyyy à HH:mm}", "", "NOTE : Les résultats heuristiques sont à vérifier. La base locale comprend EICAR, les empreintes du flux MalwareBazaar facultatif et les signatures SHA-256 ajoutées par l’utilisateur.", "", "SESSIONS D’ANALYSE" };
         lines.AddRange(session.ScanHistory.Select(x => $"{x.FinishedAt:dd/MM/yyyy HH:mm} | {x.Type} | {x.Scope} | {x.FilesScanned} fichiers analysés | {x.ThreatsFound} indicateur(s)"));
+        lines.AddRange(["", "HISTORIQUE DES MENACES"]);
+        lines.AddRange(session.ThreatHistory.Select(x => $"{x.DetectedAt:dd/MM/yyyy HH:mm} | {x.Status} | {x.Severity} | {x.Name} | SHA-256 {x.Sha256} | {x.Location}"));
+        lines.AddRange(["", "DÉTECTIONS MICROSOFT DEFENDER (dernière lecture de cette session)"]);
+        lines.AddRange(defenderThreats.Select(x => $"{x.InitialDetectionTime:dd/MM/yyyy HH:mm:ss} | {x.StatusLabel} | Action {x.ActionLabel} | menace {x.ThreatId} | {x.ResourcesLabel}"));
         lines.AddRange(["", "ACTIVITÉ RÉCENTE"]);
         lines.AddRange(session.Activity.Select(x => $"{x.CreatedAt:dd/MM/yyyy HH:mm:ss} | {x.Category} | {x.Title} | {x.Details}"));
         try

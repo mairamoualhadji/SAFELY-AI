@@ -14,10 +14,11 @@ dotnet run --project SafelyAI.Desktop\SafelyAI.Desktop.csproj
 
 - Navigation entre le tableau de bord, l’antivirus, la quarantaine, le réseau, le système, les comptes, la protection Web, la maintenance, les rapports et les paramètres.
 - Thème clair/sombre et mode de protection enregistrés dans `%LOCALAPPDATA%\SafelyAI\preferences.json`.
-- Scans locaux annulables (rapide, complet, personnalisé, USB) et historique persistant. Le moteur reste un prototype heuristique, détaillé dans `SafelyAI.Antivirus/README.md`.
+- Scans locaux annulables (rapide, complet, personnalisé, USB), moteur Microsoft Defender à la demande, et historique persistant. Le scanner local reste complémentaire; ses limites sont détaillées dans `SafelyAI.Antivirus/README.md`.
 - Lectures locales du système, du réseau, des comptes et des composants Windows ; certaines informations nécessitent des droits ou commandes Windows disponibles.
 - Analyse heuristique locale des URL et téléchargements. Elle ne remplace pas une base de réputation ni un moteur antivirus.
 - Nettoyage temporaire avec aperçu des fichiers, sélection explicite et confirmation avant suppression.
 - Notifications de session et export des rapports en texte.
+- La page Rapports peut lire, sans modifier l’état de sécurité, les 200 détections Defender les plus récentes disponibles sur Windows; cette lecture est facultative et peut être indisponible selon la configuration du poste.
 
-Le scanner local est raccordé à la vue Antivirus. La surveillance des téléchargements et d’un dossier s’active explicitement depuis cette page; les autres protections permanentes ne sont pas activées par ce prototype.
+Le scanner local et le flux MalwareBazaar sont raccordés à la vue Antivirus. La surveillance d’un dossier choisi s’active depuis cette page. Dans Paramètres, l’agent de fond facultatif peut démarrer avec la session utilisateur, contrôler jusqu’à 20 000 fichiers déjà présents au premier niveau de Téléchargements, puis les nouveaux fichiers stabilisés; il applique le mode de performance enregistré et tente un scan personnalisé Defender sans élévation sur les nouveaux téléchargements. Si cette demande est refusée, son propre scan continue et l’échec est consigné. C’est un processus utilisateur, sans protection noyau ni interception garantie avant exécution.

@@ -5,6 +5,7 @@ using SafelyAI.Desktop.Models;
 using SafelyAI.Antivirus.FileScanner;
 using SafelyAI.Antivirus.RansomwareProtection;
 using SafelyAI.Antivirus.Quarantine;
+using SafelyAI.Antivirus.SignatureEngine;
 
 namespace SafelyAI.Desktop.Services;
 
@@ -19,6 +20,7 @@ public sealed class DesktopSession : ObservableObject
     private readonly QuarantineManager _quarantine = new();
     private readonly FileBackupManager _backups = new();
     private readonly ScanHistoryStore _scanHistoryStore = new();
+    private readonly ThreatHistoryStore _threatHistoryStore = new();
     private readonly FileChangeHistoryStore _fileChangeHistoryStore = new();
     private DownloadMonitor? _downloadMonitor;
     private FileBehaviorMonitor? _fileBehaviorMonitor;
@@ -34,6 +36,7 @@ public sealed class DesktopSession : ObservableObject
     public ObservableCollection<ActivityEntry> Activity { get; } = [];
     public ObservableCollection<DesktopNotification> Notifications { get; } = [];
     public ObservableCollection<ThreatListItem> Threats { get; } = [];
+    public ObservableCollection<ThreatHistoryRecord> ThreatHistory { get; } = [];
     public ObservableCollection<QuarantineListItem> Quarantine { get; } = [];
     public ObservableCollection<BackupListItem> Backups { get; } = [];
     public ObservableCollection<FileChangeListItem> FileChanges { get; } = [];
@@ -67,6 +70,7 @@ public sealed class DesktopSession : ObservableObject
     };
     public string DownloadMonitorIntervalLabel => $"Vérification des téléchargements : toutes les {DownloadMonitorInterval.TotalSeconds:0.##} s";
     public int NotificationCount => Notifications.Count;
+    public DateTime? SignatureFeedUpdatedAtUtc => _scanner.MalwareBazaarUpdatedAtUtc;
 
     public DesktopSession()
     {
@@ -75,6 +79,12 @@ public sealed class DesktopSession : ObservableObject
         RefreshBackups();
         foreach (var item in _scanHistoryStore.Read()) ScanHistory.Add(new(item.Type, item.Scope, item.FilesScanned, item.ThreatsFound, item.FinishedAt));
         LastScan = ScanHistory.FirstOrDefault();
+        foreach (var finding in _threatHistoryStore.Read())
+        {
+            ThreatHistory.Add(finding);
+            if (finding.Status == "À examiner")
+                Threats.Add(new(finding.Name, finding.Location, finding.Severity, finding.DetectedAt, finding.Sha256));
+        }
         foreach (var item in _fileChangeHistoryStore.Read()) FileChanges.Add(new(item.Path, item.ChangeType, item.OccurredAt));
         AddNotification("Protection locale prête", "La détection locale inclut le fichier de test EICAR. Ajoutez vos signatures SHA-256 approuvées au fichier local de signatures.", "Information");
     }
@@ -97,9 +107,7 @@ public sealed class DesktopSession : ObservableObject
                 ScanStatus = p.Message;
             });
             var result = await _scanner.RunAsync(type, path, progress, _scanCancellation.Token);
-            foreach (var threat in result.Threats)
-                if (!Threats.Any(t => StringComparer.OrdinalIgnoreCase.Equals(t.Sha256, threat.Sha256)))
-                    Threats.Insert(0, new ThreatListItem(threat.Name, threat.Path, threat.Severity.ToString(), threat.DetectedAt, threat.Sha256));
+            AddFindings(result.Threats);
             var entry = new ScanHistoryEntry(ScanLabel(type), ScanScope, result.FilesScanned, result.ThreatsFound, result.FinishedAt);
             ScanHistory.Insert(0, entry);
             try { _scanHistoryStore.Append(new(entry.Type, entry.Scope, result.FilesScanned, result.ThreatsFound, result.SkippedFiles, result.BytesScanned, result.FinishedAt)); } catch { }
@@ -134,10 +142,14 @@ public sealed class DesktopSession : ObservableObject
 
     public void CancelScan() => _scanCancellation?.Cancel();
 
+    public Task<SignatureFeedUpdateResult> UpdateSignatureFeedAsync(string authKey, CancellationToken cancellationToken = default) =>
+        _scanner.UpdateSignaturesAsync(authKey, cancellationToken);
+
     public void QuarantineThreat(ThreatListItem threat)
     {
-        var item = _quarantine.Quarantine(threat.Location);
+        var item = _quarantine.Quarantine(threat.Location, threat.Sha256);
         Threats.Remove(threat);
+        SetThreatStatus(threat.Sha256, threat.Location, "En quarantaine");
         RefreshQuarantine();
         AddActivity("Antivirus", "Élément mis en quarantaine", threat.Location);
         AddNotification("Élément isolé", $"{threat.Name} a été déplacé en quarantaine.", "Information");
@@ -153,6 +165,7 @@ public sealed class DesktopSession : ObservableObject
     public void RestoreQuarantine(QuarantineListItem item)
     {
         var restored = _quarantine.Restore(item.Id);
+        SetThreatStatus(item.Sha256, item.OriginalPath, "Restaurée");
         RefreshQuarantine();
         AddActivity("Antivirus", "Élément restauré", restored);
         AddNotification("Restauration terminée", $"Fichier restauré dans {restored}.", "Information");
@@ -161,6 +174,7 @@ public sealed class DesktopSession : ObservableObject
     public void DeleteQuarantine(QuarantineListItem item)
     {
         _quarantine.DeletePermanently(item.Id);
+        SetThreatStatus(item.Sha256, item.OriginalPath, "Supprimée");
         RefreshQuarantine();
         AddActivity("Antivirus", "Élément supprimé définitivement", item.Name);
         AddNotification("Suppression terminée", $"{item.Name} a été supprimé de la quarantaine.", "Information");
@@ -169,7 +183,7 @@ public sealed class DesktopSession : ObservableObject
     private void RefreshQuarantine()
     {
         Quarantine.Clear();
-        foreach (var item in _quarantine.GetItems()) Quarantine.Add(new(item.Id, item.Name, item.OriginalPath, item.IsolatedAt, "Isolé"));
+        foreach (var item in _quarantine.GetItems()) Quarantine.Add(new(item.Id, item.Name, item.OriginalPath, item.Sha256, item.IsolatedAt, "Isolé"));
     }
 
     public void AddNotification(string title, string message, string level)
@@ -179,6 +193,23 @@ public sealed class DesktopSession : ObservableObject
     }
 
     public void ClearNotifications() => Notifications.Clear();
+
+    public void RefreshThreatHistory()
+    {
+        if (!_threatHistoryStore.TryRead(out var records))
+        {
+            AddNotification("Actualisation de l’historique impossible", "Le fichier local des menaces n’a pas pu être lu; les résultats actuellement affichés ont été conservés.", "Avertissement");
+            return;
+        }
+        ThreatHistory.Clear();
+        Threats.Clear();
+        foreach (var record in records)
+        {
+            ThreatHistory.Add(record);
+            if (record.Status == "À examiner")
+                Threats.Add(new(record.Name, record.Location, record.Severity, record.DetectedAt, record.Sha256));
+        }
+    }
 
     public void AddActivity(string category, string title, string details)
     {
@@ -200,6 +231,7 @@ public sealed class DesktopSession : ObservableObject
         }
         _downloadMonitor = new DownloadMonitor(pollingInterval: DownloadMonitorInterval);
         _downloadMonitor.DownloadReady += (_, e) => _ = ScanDownloadedFileAsync(e.Path);
+        _downloadMonitor.MonitoringError += message => System.Windows.Application.Current.Dispatcher.BeginInvoke(() => AddNotification("Surveillance des téléchargements dégradée", message, "Avertissement"));
         _downloadMonitor.Start(); IsDownloadMonitoring = true;
         AddActivity("Antivirus", "Surveillance des téléchargements activée", _downloadMonitor.DirectoryPath);
         AddNotification("Téléchargements surveillés", "Les nouveaux fichiers terminés dans Téléchargements seront analysés localement.", "Information");
@@ -214,8 +246,32 @@ public sealed class DesktopSession : ObservableObject
             {
                 AddFindings(result.Threats);
                 AddActivity("Antivirus", "Téléchargement analysé", $"{path} · {result.ThreatsFound} indicateur(s)");
-                if (result.ThreatsFound > 0) AddNotification("Indicateur dans un téléchargement", $"{Path.GetFileName(path)} : {string.Join(", ", result.Threats.Select(t => t.Name))}", "Avertissement");
+                if (result.Threats.Any()) AddNotification("Indicateur dans un téléchargement", $"{Path.GetFileName(path)} : {string.Join(", ", result.Threats.Select(t => t.Name))}", "Avertissement");
             });
+
+            // Exact signatures are high-confidence hash matches. Heuristic-only findings are never
+            // auto-isolated; the user can review those in the threat list and decide what to do.
+            foreach (var confirmed in result.Threats.Where(item => item.Severity == FileThreatSeverity.High))
+            {
+                try
+                {
+                    _quarantine.Quarantine(confirmed.Path, confirmed.Sha256);
+                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        var listed = Threats.FirstOrDefault(item => SameFinding(item.Sha256, item.Location, confirmed.Sha256, confirmed.Path));
+                        if (listed is not null) Threats.Remove(listed);
+                        SetThreatStatus(confirmed.Sha256, confirmed.Path, "En quarantaine");
+                        RefreshQuarantine();
+                        AddActivity("Antivirus", "Téléchargement connu isolé automatiquement", confirmed.Path);
+                        AddNotification("Téléchargement connu mis en quarantaine", $"La correspondance SHA-256 exacte a été isolée. Le fichier est restaurable dans la quarantaine : {Path.GetFileName(confirmed.Path)}.", "Avertissement");
+                    });
+                }
+                catch (Exception quarantineError)
+                {
+                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        AddNotification("Menace connue détectée, isolement impossible", $"{confirmed.Path} · {quarantineError.Message}", "Avertissement"));
+                }
+            }
         }
         catch (Exception ex) { await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => AddNotification("Analyse du téléchargement impossible", ex.Message, "Avertissement")); }
     }
@@ -223,8 +279,52 @@ public sealed class DesktopSession : ObservableObject
     private void AddFindings(IEnumerable<FileThreat> findings)
     {
         foreach (var threat in findings)
-            if (!Threats.Any(t => StringComparer.OrdinalIgnoreCase.Equals(t.Sha256, threat.Sha256)))
-                Threats.Insert(0, new ThreatListItem(threat.Name, threat.Path, threat.Severity.ToString(), threat.DetectedAt, threat.Sha256));
+        {
+            ThreatHistoryRecord? record = null;
+            try { record = _threatHistoryStore.RecordDetection(threat); }
+            catch (Exception exception) { AddNotification("Historique de menace indisponible", exception.Message, "Avertissement"); }
+            if (record is not null) UpsertThreatHistory(record);
+
+            var listed = Threats.FirstOrDefault(item => SameFinding(item.Sha256, item.Location, threat.Sha256, threat.Path));
+            if (listed is not null) Threats.Remove(listed);
+            Threats.Insert(0, new ThreatListItem(threat.Name, threat.Path, threat.Severity.ToString(), threat.DetectedAt, threat.Sha256));
+        }
+    }
+
+    private void SetThreatStatus(string sha256, string location, string status)
+    {
+        try
+        {
+            var record = _threatHistoryStore.SetStatus(sha256, location, status);
+            if (record is null) return;
+            UpsertThreatHistory(record);
+            if (status != "À examiner")
+            {
+                var listed = Threats.FirstOrDefault(item => SameFinding(item.Sha256, item.Location, sha256, location));
+                if (listed is not null) Threats.Remove(listed);
+            }
+        }
+        catch (Exception exception) { AddNotification("Mise à jour de l’historique impossible", exception.Message, "Avertissement"); }
+    }
+
+    private void UpsertThreatHistory(ThreatHistoryRecord record)
+    {
+        var index = -1;
+        for (var i = 0; i < ThreatHistory.Count; i++)
+            if (SameFinding(ThreatHistory[i].Sha256, ThreatHistory[i].Location, record.Sha256, record.Location)) { index = i; break; }
+        if (index >= 0) ThreatHistory.RemoveAt(index);
+        ThreatHistory.Insert(0, record);
+        if (ThreatHistory.Count > 2_000) ThreatHistory.RemoveAt(ThreatHistory.Count - 1);
+    }
+
+    private static bool SameFinding(string leftHash, string leftPath, string rightHash, string rightPath) =>
+        StringComparer.OrdinalIgnoreCase.Equals(leftHash, rightHash)
+        && StringComparer.OrdinalIgnoreCase.Equals(NormalizePath(leftPath), NormalizePath(rightPath));
+
+    private static string NormalizePath(string path)
+    {
+        try { return Path.GetFullPath(path); }
+        catch { return path; }
     }
 
     public void ToggleFolderMonitoring(string folder)
@@ -242,6 +342,7 @@ public sealed class DesktopSession : ObservableObject
             try { _fileChangeHistoryStore.Append(record); } catch { }
             AddActivity("Fichier", record.ChangeType, record.Path);
         });
+        _fileBehaviorMonitor.MonitoringError += message => System.Windows.Application.Current.Dispatcher.BeginInvoke(() => AddNotification("Surveillance des fichiers dégradée", message, "Avertissement"));
         _fileBehaviorMonitor.SuspiciousBurstDetected += (_, burst) => System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             var assessment = new RansomwareDetector().Assess(burst);
@@ -273,6 +374,6 @@ public sealed class DesktopSession : ObservableObject
 }
 
 public sealed record ThreatListItem(string Name, string Location, string Severity, DateTime DetectedAt, string Sha256);
-public sealed record QuarantineListItem(string Id, string Name, string OriginalPath, DateTime IsolatedAt, string Status);
+public sealed record QuarantineListItem(string Id, string Name, string OriginalPath, string Sha256, DateTime IsolatedAt, string Status);
 public sealed record BackupListItem(string Id, string Name, string OriginalPath, DateTime CreatedAt);
 public sealed record FileChangeListItem(string Path, string ChangeType, DateTime OccurredAt);

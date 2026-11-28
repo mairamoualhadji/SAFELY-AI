@@ -1,0 +1,17 @@
+<Window x:Class="SafelyAI.Desktop.Views.SignatureFeedKeyWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Configurer les signatures" Width="520" Height="300" MinWidth="460" MinHeight="280"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize" ShowInTaskbar="False">
+  <Grid Margin="22">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock Text="Flux MalwareBazaar" FontSize="20" FontWeight="SemiBold"/>
+    <TextBlock Grid.Row="1" Margin="0,12,0,10" TextWrapping="Wrap">Obtenez une clé API sur auth.abuse.ch. La clé sera enregistrée dans le Gestionnaire d’identifiants Windows de votre compte. SAFELY AI ne télécharge que des empreintes SHA-256; il ne télécharge ni n’exécute d’échantillons.</TextBlock>
+    <PasswordBox Grid.Row="2" x:Name="ApiKeyInput" Padding="8" ToolTip="Collez votre clé API MalwareBazaar"/>
+    <TextBlock Grid.Row="3" Margin="0,10,0,8" Foreground="DimGray" TextWrapping="Wrap">L’API communautaire est soumise aux règles d’usage d’abuse.ch. Consultez leurs conditions, notamment avant toute redistribution commerciale du produit.</TextBlock>
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Content="Annuler" IsCancel="True" MinWidth="92" Margin="0,0,8,0" Padding="12,7"/>
+      <Button Content="Enregistrer" IsDefault="True" MinWidth="100" Padding="12,7" Click="Save_Click"/>
+    </StackPanel>
+  </Grid>
+</Window>

@@ -19,17 +19,30 @@ public sealed class QuarantineManager
     {
         lock (_gate) return ReadManifest();
     }
-    public QuarantineItem Quarantine(string sourcePath)
+    public QuarantineItem Quarantine(string sourcePath, string? expectedSha256 = null)
     {
         var source = Path.GetFullPath(sourcePath);
         if (!File.Exists(source)) throw new FileNotFoundException("Le fichier à isoler est introuvable.", source);
+        var attributes = File.GetAttributes(source);
+        if ((attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidOperationException("Les liens symboliques et points de réanalyse ne sont pas mis en quarantaine par cet outil.");
+        if (expectedSha256 is not null && (expectedSha256.Length != 64 || !expectedSha256.All(Uri.IsHexDigit)))
+            throw new ArgumentException("L’empreinte SHA-256 attendue est invalide.", nameof(expectedSha256));
         lock (_gate)
         {
             var id = Guid.NewGuid().ToString("N"); var target = Path.Combine(_root, id + ".quarantined");
             var hash = Hash(source);
+            if (expectedSha256 is not null && !StringComparer.OrdinalIgnoreCase.Equals(hash, expectedSha256))
+                throw new InvalidDataException("Le fichier a changé depuis l’analyse. Relancez une analyse avant de le mettre en quarantaine.");
             File.Move(source, target);
-            var item = new QuarantineItem(id, Path.GetFileName(source), source, target, hash, DateTime.Now);
-            try { var items = ReadManifest().ToList(); items.Insert(0, item); WriteManifest(items); return item; }
+            try
+            {
+                var isolatedHash = Hash(target);
+                if (!StringComparer.OrdinalIgnoreCase.Equals(isolatedHash, hash))
+                    throw new InvalidDataException("Le contenu a changé pendant l’isolement. Le fichier a été remis à son emplacement d’origine.");
+                var item = new QuarantineItem(id, Path.GetFileName(source), source, target, isolatedHash, DateTime.Now);
+                var items = ReadManifest().ToList(); items.Insert(0, item); WriteManifest(items); return item;
+            }
             catch
             {
                 if (File.Exists(target) && !File.Exists(source)) File.Move(target, source);

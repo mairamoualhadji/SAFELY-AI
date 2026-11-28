@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace SafelyAI.AI.OllamaClient;
 
-public class OllamaService
+public class OllamaService : IDisposable
 {
     private readonly HttpClient _http;
 
@@ -11,7 +11,9 @@ public class OllamaService
 
     public OllamaService(string model = "llama3.2", string baseUrl = "http://localhost:11434")
     {
-        _http = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(2) };
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttp || !uri.IsLoopback)
+            throw new ArgumentException("Le modèle local doit être servi par une adresse HTTP de boucle locale.", nameof(baseUrl));
+        _http = new HttpClient { BaseAddress = uri, Timeout = TimeSpan.FromSeconds(45) };
         Model = model;
     }
 
@@ -35,6 +37,8 @@ public class OllamaService
         var data = await response.Content.ReadFromJsonAsync<GenerateResponse>();
         return data?.Response ?? string.Empty;
     }
+
+    public void Dispose() => _http.Dispose();
 
     private record GenerateRequest(
         [property: JsonPropertyName("model")] string Model,
