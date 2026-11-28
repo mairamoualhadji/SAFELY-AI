@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SafelyAI.AI</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SafelyAI.Core\SafelyAI.Core.csproj" />
+    <ProjectReference Include="..\SafelyAI.Network\SafelyAI.Network.csproj" />
+    <ProjectReference Include="..\SafelyAI.SystemMonitor\SafelyAI.SystemMonitor.csproj" />
+  </ItemGroup>
+</Project>
