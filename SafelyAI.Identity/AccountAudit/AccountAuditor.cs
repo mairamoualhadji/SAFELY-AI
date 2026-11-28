@@ -28,6 +28,10 @@ public class AccountAuditor
         var activeAdmins = accounts.Where(a => a.IsAdmin && a.Enabled).ToList();
         foreach (var a in activeAdmins.Where(a => !a.PasswordRequired))
             alerts.Add($"Le compte administrateur « {a.Name} » n'a pas de mot de passe obligatoire");
+        foreach (var a in accounts.Where(a => a.Enabled &&
+                     (a.Name.Equals("Guest", StringComparison.OrdinalIgnoreCase) ||
+                      a.Name.Equals("Invité", StringComparison.OrdinalIgnoreCase))))
+            alerts.Add($"Le compte invité « {a.Name} » est activé");
         if (activeAdmins.Count > 2)
             alerts.Add($"{activeAdmins.Count} comptes administrateurs actifs : vérifiez qu'ils sont tous légitimes");
         return alerts;

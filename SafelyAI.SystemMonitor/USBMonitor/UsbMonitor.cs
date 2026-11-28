@@ -21,6 +21,12 @@ public class UsbMonitor
 
     public void Stop() => _timer?.Dispose();
 
+    public void Dispose()
+    {
+        Stop();
+        _timer = null;
+    }
+
     private static HashSet<string> CurrentDrives() =>
         DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Removable && d.IsReady).Select(d => d.Name).ToHashSet();
 

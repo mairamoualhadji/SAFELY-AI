@@ -1,5 +1,8 @@
 using SafelyAI.Common;
+using System.Text.RegularExpressions;
 namespace SafelyAI.Identity.SessionMonitoring;
+
+public record WindowsSession(string UserName, string SessionName, int SessionId, string State, string IdleTime, string LogonTime);
 
 public class SessionMonitor
 {
@@ -19,4 +22,17 @@ public class SessionMonitor
 
     // Sessions Windows ouvertes.
     public string CurrentSessions() => Shell.Run("quser.exe", "");
+
+    public List<WindowsSession> GetSessions()
+    {
+        var sessions = new List<WindowsSession>();
+        foreach (var line in Shell.Lines(CurrentSessions()).Skip(1))
+        {
+            string normalized = line.TrimStart('>', ' ');
+            var match = Regex.Match(normalized, @"^(\S+)\s+(\S*)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$");
+            if (!match.Success || !int.TryParse(match.Groups[3].Value, out int id)) continue;
+            sessions.Add(new(match.Groups[1].Value, match.Groups[2].Value, id, match.Groups[4].Value, match.Groups[5].Value, match.Groups[6].Value.Trim()));
+        }
+        return sessions;
+    }
 }

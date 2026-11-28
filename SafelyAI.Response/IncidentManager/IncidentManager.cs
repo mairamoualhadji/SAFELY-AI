@@ -12,6 +12,26 @@ namespace SafelyAI.Response.IncidentManager
     {
         private readonly List<SecurityIncident> incidents = new();
         private readonly ReaderWriterLockSlim incidentsLock = new();
+        private readonly IIncidentStore? store;
+        private readonly ISecurityLogger? logger;
+
+        public IncidentManager(IIncidentStore? store = null, ISecurityLogger? logger = null)
+        {
+            this.store = store;
+            this.logger = logger;
+
+            if (store == null)
+                return;
+
+            try
+            {
+                incidents.AddRange(store.Load());
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError($"Impossible de charger les incidents persistés : {ex.Message}");
+            }
+        }
 
         public SecurityIncident CreateIncident(
             string title,
@@ -50,11 +70,20 @@ namespace SafelyAI.Response.IncidentManager
             try
             {
                 incidents.Add(incident);
+                TryPersist(() => store?.Save(incident));
             }
             finally
             {
                 incidentsLock.ExitWriteLock();
             }
+
+            TryLog(new SecurityEvent
+            {
+                EventType = "Incident créé",
+                Description = incident.Title,
+                Severity = incident.Severity,
+                Source = "IncidentManager"
+            });
 
             return incident;
         }
@@ -108,6 +137,14 @@ namespace SafelyAI.Response.IncidentManager
 
                 incident.Status = newStatus;
                 incident.UpdatedAt = DateTime.Now;
+                TryPersist(() => store?.Update(incident));
+                TryLog(new SecurityEvent
+                {
+                    EventType = "Incident mis à jour",
+                    Description = $"{incident.Title} -> {newStatus}",
+                    Severity = incident.Severity,
+                    Source = "IncidentManager"
+                });
 
                 return true;
             }
@@ -115,6 +152,18 @@ namespace SafelyAI.Response.IncidentManager
             {
                 incidentsLock.ExitWriteLock();
             }
+        }
+
+        private void TryPersist(Action action)
+        {
+            try { action(); }
+            catch (Exception ex) { logger?.LogError($"Persistance incident impossible : {ex.Message}"); }
+        }
+
+        private void TryLog(SecurityEvent securityEvent)
+        {
+            try { logger?.LogEvent(securityEvent); }
+            catch { /* Une panne de journal ne doit pas annuler la réponse à l'incident. */ }
         }
     }
 }

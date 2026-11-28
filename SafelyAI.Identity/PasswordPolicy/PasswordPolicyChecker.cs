@@ -28,6 +28,7 @@ public class PasswordPolicyChecker
         if (p.MinLength < 8) issues.Add("Longueur minimale du mot de passe inférieure à 8 caractères");
         if (!p.ComplexityRequired) issues.Add("La complexité du mot de passe n'est pas exigée");
         if (p.LockoutThreshold == 0) issues.Add("Aucun verrouillage du compte après des échecs de connexion");
+        if (p.MaxAgeDays <= 0) issues.Add("Les mots de passe n'expirent pas selon la politique locale");
         return issues;
     }
 }

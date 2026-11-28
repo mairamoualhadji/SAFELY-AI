@@ -1,6 +1,8 @@
 using SafelyAI.Common;
 namespace SafelyAI.SystemMonitor.HardwareMonitor;
 
+public record HardwareSecuritySnapshot(string SecureBoot, string Tpm, string BitLocker, DateTimeOffset CapturedAt);
+
 // Ces vérifications demandent en général les droits administrateur.
 public class HardwareMonitor
 {
@@ -14,6 +16,9 @@ public class HardwareMonitor
 
     public string GetBitLockerStatus() =>
         Shell.PowerShell("""try { Get-BitLockerVolume | ForEach-Object { "$($_.MountPoint): $($_.ProtectionStatus)" } } catch { 'Inconnu (droits administrateur requis ou matériel non compatible)' }""");
+
+    public HardwareSecuritySnapshot GetSecuritySnapshot() =>
+        new(GetSecureBootStatus(), GetTpmStatus(), GetBitLockerStatus(), DateTimeOffset.UtcNow);
 
     // Liste des périphériques présents : à comparer d'un lancement à l'autre.
     public List<string> TakeSnapshot() =>
