@@ -2,12 +2,27 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 
 namespace SafelyAI.Response.Recovery
 {
     public class RecoveryManager
     {
         private readonly List<RecoveryRecord> records = new();
+        private readonly object recordsLock = new();
+        private readonly string? historyPath;
+
+        public RecoveryManager(string? historyPath = null)
+        {
+            this.historyPath = string.IsNullOrWhiteSpace(historyPath) ? null : Path.GetFullPath(historyPath);
+            if (this.historyPath == null || !File.Exists(this.historyPath)) return;
+            try
+            {
+                var loaded = JsonSerializer.Deserialize<List<RecoveryRecord>>(File.ReadAllText(this.historyPath));
+                if (loaded != null) records.AddRange(loaded);
+            }
+            catch { /* Un historique corrompu ne doit pas empêcher la restauration. */ }
+        }
 
         public RecoveryResult RestoreFile(
             string backupPath,
@@ -75,7 +90,11 @@ namespace SafelyAI.Response.Recovery
                     Status = "Restauré"
                 };
 
-                records.Add(record);
+                lock (recordsLock)
+                {
+                    records.Add(record);
+                    PersistHistory();
+                }
 
                 result.Success = true;
                 result.Record = record;
@@ -103,7 +122,17 @@ namespace SafelyAI.Response.Recovery
 
         public List<RecoveryRecord> GetRecoveryHistory()
         {
-            return new List<RecoveryRecord>(records);
+            lock (recordsLock) return new List<RecoveryRecord>(records);
+        }
+
+        private void PersistHistory()
+        {
+            if (historyPath == null) return;
+            string? directory = Path.GetDirectoryName(historyPath);
+            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+            string temporary = historyPath + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(records, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temporary, historyPath, true);
         }
     }
 
